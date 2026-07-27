@@ -4,15 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Validador Terracoin</title>
-    <!-- Biblioteca oficial de alta performance para detecção contínua -->
-    <script src="https://unpkg.com"></script>
+    <!-- Nova biblioteca oficial, ultra leve e 100% estável para celulares -->
+    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
         .container { max-width: 400px; margin: 0 auto; }
         button { background: #00e676; border: none; padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; color: #000; width: 100%; margin-top: 15px; }
-        #leitor { width: 100%; max-width: 350px; margin: 20px auto; border-radius: 12px; overflow: hidden; background: #222; border: 2px solid #333; }
-        /* Força o elemento de vídeo gerado a rodar liso e sem engasgos */
-        #leitor video { width: 100% !important; height: auto !important; object-fit: cover; }
+        #canvas { width: 100%; max-width: 350px; margin: 20px auto; border-radius: 12px; background: #222; display: none; }
         .resultado { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; display: none; }
         .sucesso { background: #1b5e20; color: #a5d6a7; border: 1px solid #81c784; }
         .erro { background: #b71c1c; color: #ef9a9a; border: 1px solid #e57373; }
@@ -24,10 +22,10 @@
     <h2>🪙 Validador Terracoin</h2>
     <input type="text" id="jogador" value="jogador_Eudes_Teste" style="padding: 10px; width: 90%; border-radius: 5px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444;">
     
-    <!-- Caixa onde o vídeo contínuo e liso será renderizado -->
-    <div id="leitor"></div>
+    <!-- Renderização direta da filmagem sem travar -->
+    <canvas id="canvas"></canvas>
     
-    <button id="btn-camera" onclick="iniciarScannerContinuo()">📷 Abrir Câmera do Celular</button>
+    <button id="btn-camera" onclick="iniciarCameraNativa()">📷 Abrir Câmera do Celular</button>
     
     <div id="resultado-box" class="resultado"></div>
     <p id="status" style="color:#888; font-size:14px;"></p>
@@ -35,57 +33,68 @@
 
 <script>
 const URL_SUA_NUVEM = "https://supabase.co"; 
-let html5QrcodeScanner = null;
 
-function iniciarScannerContinuo() {
+let video = document.createElement("video");
+let canvasElement = document.getElementById("canvas");
+let canvas = canvasElement.getContext("2d");
+let streamAtiva = null;
+
+async function iniciarCameraNativa() {
     document.getElementById('resultado-box').style.display = 'none';
-    document.getElementById('status').innerText = "Iniciando transmissão de vídeo contínua...";
+    document.getElementById('status').innerText = "Solicitando hardware nativo...";
 
-    // Inicializa o leitor apontando para a nossa div de exibição
-    html5QrcodeScanner = new Html5Qrcode("leitor");
-
-    // Configurações de hardware para vídeo fluido e foco automático contínuo
-    const configuracaoHardware = {
-        fps: 25, // Quadros por segundo para a imagem ficar totalmente lisa
-        qrbox: function(width, height) {
-            // Define o quadrado de foco central
-            return { width: Math.min(width * 0.7, 250), height: Math.min(height * 0.7, 250) };
+    const configuracaoCamera = {
+        video: { 
+            facingMode: "environment", // Força o uso estrito da câmera de trás
+            width: { ideal: 640 },
+            height: { ideal: 480 }
         },
-        videoConstraints: {
-            facingMode: "environment", // Garante o uso da câmera traseira
-            focusMode: "continuous",   // Ativa o autofoco contínuo nativo da lente
-            resizeMode: "none"
-        }
+        audio: false // Desliga o áudio para o sistema não dar erro
     };
 
-    // Abre a câmera de forma fluida sem travar o navegador
-    html5QrcodeScanner.start(
-        { facingMode: "environment" },
-        configuracaoHardware,
-        onScanSuccess,
-        onScanFailure
-    )
-    .then(() => {
-        document.getElementById('status').innerText = "Filmando... Enquadre o QR Code dentro do quadrado central.";
-    })
-    .catch(err => {
-        document.getElementById('status').innerText = "Erro: " + err;
-    });
+    try {
+        // Dispara o pedido direto ao sistema operacional do celular
+        streamAtiva = await navigator.mediaDevices.getUserMedia(configuracaoCamera);
+        video.srcObject = streamAtiva;
+        
+        // Atributos fundamentais para rodar liso no iPhone e no Android
+        video.setAttribute("playsinline", "true"); 
+        video.setAttribute("muted", "true");
+        video.play();
+        
+        canvasElement.style.display = "block";
+        document.getElementById('status').innerText = "Filmando... Enquadre e foque no QR Code.";
+        requestAnimationFrame(escanearQuadro);
+    } catch (err) {
+        document.getElementById('status').innerText = "Erro ao acessar câmera: " + err.message;
+        alert("Por favor, ative a permissão de câmera nas configurações do seu navegador.");
+    }
 }
 
-function onScanSuccess(decodedText) {
-    // QR Code lido com sucesso! Desliga a câmera instantaneamente para não gastar dados
-    html5QrcodeScanner.stop().then(() => {
-        document.getElementById('status').innerText = "Código capturado! Enviando para o Supabase...";
-        enviarDadosParaNuvem(decodedText);
-    }).catch(err => {
-        console.error("Erro ao pausar câmera:", err);
-    });
-}
+function escanearQuadro() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvasElement.height = video.videoHeight;
+        canvasElement.width = video.videoWidth;
+        canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+        
+        let imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+        // Biblioteca jsQR faz o escaneamento na velocidade da luz
+        let code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: "dontInvert",
+        });
 
-function onScanFailure(error) {
-    // Esse bloco roda silenciosamente a cada milissegundo procurando o código
-    // Ignoramos falhas de foco contínuas até enquadrar perfeitamente
+        if (code) {
+            // Código encontrado! Desliga os sensores da câmera
+            if (streamAtiva) {
+                streamAtiva.getTracks().forEach(track => track.stop());
+            }
+            canvasElement.style.display = "none";
+            document.getElementById('status').innerText = "Copiado! Enviando para o Supabase...";
+            enviarDadosParaNuvem(code.data);
+            return;
+        }
+    }
+    requestAnimationFrame(escanearQuadro);
 }
 
 function enviarDadosParaNuvem(linkQRCode) {
@@ -112,7 +121,6 @@ function enviarDadosParaNuvem(linkQRCode) {
         box.style.display = "block";
         box.innerHTML = "Falha crítica de comunicação com o Supabase.";
         box.className = "resultado erro";
-        document.getElementById('status').innerText = "Erro de rede.";
     });
 }
 </script>
