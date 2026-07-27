@@ -4,16 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Validador Terracoin</title>
-    <!-- Nova biblioteca oficial, ultra leve e 100% estável para celulares -->
+    <!-- Biblioteca leve para decodificar o QR Code -->
     <script src="https://jsdelivr.net"></script>
     <style>
-        body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
+        body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; }
         .container { max-width: 400px; margin: 0 auto; }
-        button { background: #00e676; border: none; padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; color: #000; width: 100%; margin-top: 15px; }
-        #canvas { width: 100%; max-width: 350px; margin: 20px auto; border-radius: 12px; background: #222; display: none; }
+        button { background: #00e676; border: none; padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; color: #000; width: 100%; margin-top: 20px; }
+        video { width: 100%; max-width: 350px; border-radius: 12px; margin-top: 20px; background: #222; display: none; }
         .resultado { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; display: none; }
-        .sucesso { background: #1b5e20; color: #a5d6a7; border: 1px solid #81c784; }
-        .erro { background: #b71c1c; color: #ef9a9a; border: 1px solid #e57373; }
+        .sucesso { background: #1b5e20; color: #a5d6a7; }
+        .erro { background: #b71c1c; color: #ef9a9a; }
     </style>
 </head>
 <body>
@@ -22,86 +22,73 @@
     <h2>🪙 Validador Terracoin</h2>
     <input type="text" id="jogador" value="jogador_Eudes_Teste" style="padding: 10px; width: 90%; border-radius: 5px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444;">
     
-    <!-- Renderização direta da filmagem sem travar -->
-    <canvas id="canvas"></canvas>
+    <!-- Elemento de vídeo direto do celular -->
+    <video id="webcam" autoplay playsinline muted></video>
     
-    <button id="btn-camera" onclick="iniciarCameraNativa()">📷 Abrir Câmera do Celular</button>
+    <button onclick="ligarCamera()">📷 Abrir Câmera</button>
     
     <div id="resultado-box" class="resultado"></div>
     <p id="status" style="color:#888; font-size:14px;"></p>
 </div>
 
+<!-- Canvas oculto apenas para processar a leitura do link -->
+<canvas id="canvas" style="display: none;"></canvas>
+
 <script>
 const URL_SUA_NUVEM = "https://supabase.co"; 
 
-let video = document.createElement("video");
-let canvasElement = document.getElementById("canvas");
-let canvas = canvasElement.getContext("2d");
+const video = document.getElementById("webcam");
+const canvasElement = document.getElementById("canvas");
+const canvas = canvasElement.getContext("2d");
 let streamAtiva = null;
 
-async function iniciarCameraNativa() {
+async function ligarCamera() {
     document.getElementById('resultado-box').style.display = 'none';
-    document.getElementById('status').innerText = "Solicitando hardware nativo...";
-
-    const configuracaoCamera = {
-        video: { 
-            facingMode: "environment", // Força o uso estrito da câmera de trás
-            width: { ideal: 640 },
-            height: { ideal: 480 }
-        },
-        audio: false // Desliga o áudio para o sistema não dar erro
-    };
-
+    document.getElementById('status').innerText = "Ligando câmera...";
+    
     try {
-        // Dispara o pedido direto ao sistema operacional do celular
-        streamAtiva = await navigator.mediaDevices.getUserMedia(configuracaoCamera);
+        streamAtiva = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
         video.srcObject = streamAtiva;
+        video.style.display = "block";
+        document.getElementById('status').innerText = "Filmando... Enquadre o QR Code.";
         
-        // Atributos fundamentais para rodar liso no iPhone e no Android
-        video.setAttribute("playsinline", "true"); 
-        video.setAttribute("muted", "true");
-        video.play();
-        
-        canvasElement.style.display = "block";
-        document.getElementById('status').innerText = "Filmando... Enquadre e foque no QR Code.";
-        requestAnimationFrame(escanearQuadro);
+        // Inicia a checagem contínua do link
+        requestAnimationFrame(lerQRCode);
     } catch (err) {
-        document.getElementById('status').innerText = "Erro ao acessar câmera: " + err.message;
-        alert("Por favor, ative a permissão de câmera nas configurações do seu navegador.");
+        document.getElementById('status').innerText = "Erro ao abrir câmera.";
     }
 }
 
-function escanearQuadro() {
+function lerQRCode() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
         canvasElement.height = video.videoHeight;
         canvasElement.width = video.videoWidth;
         canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
         
         let imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-        // Biblioteca jsQR faz o escaneamento na velocidade da luz
-        let code = jsQR(imageData.data, imageData.width, imageData.height, {
-            inversionAttempts: "dontInvert",
-        });
+        let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
 
         if (code) {
-            // Código encontrado! Desliga os sensores da câmera
-            if (streamAtiva) {
-                streamAtiva.getTracks().forEach(track => track.stop());
-            }
-            canvasElement.style.display = "none";
-            document.getElementById('status').innerText = "Copiado! Enviando para o Supabase...";
-            enviarDadosParaNuvem(code.data);
+            // QR Code encontrado! Encerra a câmera e envia o link direto para o Supabase
+            streamAtiva.getTracks().forEach(track => track.stop());
+            video.style.display = "none";
+            document.getElementById('status').innerText = "Link capturado! Enviando para o Supabase...";
+            
+            enviarParaSupabase(code.data);
             return;
         }
     }
-    requestAnimationFrame(escanearQuadro);
+    requestAnimationFrame(lerQRCode);
 }
 
-function enviarDadosParaNuvem(linkQRCode) {
+function enviarParaSupabase(linkQRCode) {
     fetch(URL_SUA_NUVEM, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_jogador: document.getElementById('jogador').value, link_qrcode: linkQRCode })
+        body: JSON.stringify({ 
+            id_jogador: document.getElementById('jogador').value, 
+            link_qrcode: linkQRCode 
+        })
     })
     .then(res => res.json().then(dados => ({ status: res.status, corpo: dados })))
     .then(resposta => {
@@ -111,15 +98,15 @@ function enviarDadosParaNuvem(linkQRCode) {
             box.innerHTML = `Sucesso!<br>Saldo Atual: ${resposta.corpo.novo_saldo} Terracoins`;
             box.className = "resultado sucesso";
         } else {
-            box.innerHTML = `Erro na Nuvem: ${resposta.corpo.erro}`;
+            box.innerHTML = `Erro: ${resposta.corpo.erro}`;
             box.className = "resultado erro";
         }
-        document.getElementById('status').innerText = "Processo finalizado.";
+        document.getElementById('status').innerText = "Pronto.";
     })
     .catch(() => {
         const box = document.getElementById('resultado-box');
         box.style.display = "block";
-        box.innerHTML = "Falha crítica de comunicação com o Supabase.";
+        box.innerHTML = "Erro de conexão com o Supabase.";
         box.className = "resultado erro";
     });
 }
