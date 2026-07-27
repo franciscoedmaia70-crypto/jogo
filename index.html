@@ -7,17 +7,16 @@
     <style>
         body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
         .container { max-width: 400px; margin: 0 auto; }
+        .btn-principal { background: #00e676; border: none; padding: 20px; font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer; color: #000; width: 100%; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,230,118,0.3); text-transform: uppercase; display: block; }
         input[type="text"] { padding: 12px; width: 90%; border-radius: 8px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444; text-align: center; }
         .resultado { margin-top: 25px; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 18px; display: none; line-height: 1.5; }
         .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; }
         .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; }
         
-        /* Container do scanner de vídeo profissional */
-        #reader { width: 100%; background: #1a1a1a; border-radius: 16px; overflow: hidden; border: 2px solid #333; margin-top: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        #reader button { background: #00e676 !important; color: #000 !important; border: none !important; padding: 12px 20px !important; font-size: 14px !important; font-weight: bold !important; border-radius: 8px !important; cursor: pointer !important; margin: 10px !important; text-transform: uppercase; }
-        #reader select { background: #222 !important; color: #fff !important; border: 1px solid #444 !important; padding: 8px !important; border-radius: 6px !important; margin: 10px !important; }
+        #reader { width: 100%; background: #1a1a1a; border-radius: 16px; overflow: hidden; border: 2px solid #333; margin-top: 20px; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        #reader button { background: #444 !important; color: #fff !important; border: none !important; padding: 10px 15px !important; border-radius: 6px !important; margin: 10px !important; font-weight: bold; }
     </style>
-    <!-- Importação da biblioteca de alta performance para scanner de câmera web -->
+    <!-- Carregamento da biblioteca oficial -->
     <script src="https://unpkg.com" type="text/javascript"></script>
 </head>
 <body>
@@ -28,7 +27,9 @@
     <label style="display:block; text-align:left; margin-bottom:5px; color:#888; font-size:14px;">Identificação do Jogador:</label>
     <input type="text" id="jogador" value="jogador_Eudes_Teste">
     
-    <!-- O Scanner de vídeo e os controles de câmera serão renderizados dentro desta DIV abaixo -->
+    <!-- GARANTIDO: Botão HTML real e visível na tela -->
+    <button id="btn-iniciar" class="btn-principal" onclick="ligarScannerCompleto()">📷 INICIAR ESCANEAMENTO</button>
+    
     <div id="reader"></div>
     
     <div id="resultado-box" class="resultado"></div>
@@ -36,55 +37,82 @@
 </div>
 
 <script>
-// CONFIGURAÇÕES CONSOLIDADAS DO SEU PROJETO SUPABASE
 const SUPABASE_URL = "https://supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_0OAqqEGs9Vd1tMr--xwCgw_IGGupw8h"; 
 
-// Inicialização do Scanner com parâmetros otimizados para cupons fiscais (NFC-e)
-const html5QrcodeScanner = new Html5QrcodeScanner(
-    "reader", 
-    { 
-        fps: 20, // Executa a varredura de frames 20 vezes por segundo para capturas instantâneas
-        qrbox: function(viewfinderWidth, viewfinderHeight) {
-            // Desenha um quadrado de mira equivalente a 75% da área visível da tela
-            const minEdgePercentage = 0.75;
-            const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-            const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
-            return {
-                width: qrboxSize,
-                height: qrboxSize
-            };
-        },
-        aspectRatio: 1.0, // Força aspecto quadrado para melhor foco e enquadramento central
-        experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true // Ativa aceleração por hardware nativa do chip do celular se disponível
-        }
-    },
-    /* verbose= */ false
-);
+let html5Qrcode = null;
 
-// Função engatada automaticamente no milésimo de segundo em que o QR Code for decodificado
-function onScanSuccess(decodedText, decodedResult) {
-    // Desliga e limpa o scanner da tela para evitar requisições duplicadas seguidas
-    html5QrcodeScanner.clear();
-    document.getElementById("reader").style.display = "none";
+function ligarScannerCompleto() {
+    const readerDiv = document.getElementById("reader");
+    const btn = document.getElementById("btn-iniciar");
+    const box = document.getElementById('resultado-box');
     
+    box.style.display = 'none';
+    readerDiv.style.display = "block";
+    btn.style.display = "none"; // Oculta o botão inicial para abrir a câmera
+
+    // Instancia o leitor diretamente para pular menus complexos da biblioteca
+    html5Qrcode = new Html5Qrcode("reader");
+    
+    // Força o acionamento direto da câmera traseira (environment)
+    html5Qrcode.start(
+        { facingMode: "environment" }, 
+        {
+            fps: 20,
+            qrbox: { width: 260, height: 260 }
+        },
+        onScanSuccess,
+        onScanFailure
+    ).catch(err => {
+        console.error(err);
+        // Fallback: Se der erro de câmera por falta de HTTPS, ativa o modo de upload de arquivo automaticamente
+        readerDiv.innerHTML = `<div style="padding:20px; color:#aaa;">Seu navegador bloqueou o vídeo por segurança local.<br>Use o botão abaixo para carregar a foto da nota:<br><input type="file" accept="image/*" onchange="escanearArquivoFoto(event)" style="margin-top:15px; color:#fff;"></div>`;
+    });
+}
+
+function onScanSuccess(decodedText) {
+    if (html5Qrcode) {
+        html5Qrcode.stop().then(() => {
+            document.getElementById("reader").style.display = "none";
+            document.getElementById("btn-iniciar").style.display = "block";
+        }).catch(err => console.log(err));
+    }
     document.getElementById('status').innerText = "🚀 Enviando dados para validação fiscal...";
     enviarDadosParaNuvem(decodedText);
 }
 
 function onScanFailure(error) {
-    // Ignora frames em branco ou desfocados enquanto o usuário move a câmera até o alvo
+    // Ignora frames limpos
 }
 
-// Renderiza a interface padrão da biblioteca no box
-html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+// Gerencia a leitura se o usuário escolher enviar o arquivo de foto no computador
+function escanearArquivoFoto(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    document.getElementById('status').innerText = "⏳ Analisando arquivo enviado...";
+    const scannerArquivo = new Html5Qrcode("reader");
+    
+    scannerArquivo.scanFile(file, true)
+        .then(decodedText => {
+            document.getElementById("reader").style.display = "none";
+            document.getElementById("btn-iniciar").style.display = "block";
+            document.getElementById('status').innerText = "🚀 Enviando dados para validação fiscal...";
+            enviarDadosParaNuvem(decodedText);
+        })
+        .catch(err => {
+            document.getElementById('status').innerText = "";
+            const box = document.getElementById('resultado-box');
+            box.style.display = "block";
+            box.innerHTML = "❌ Não foi possível achar um QR Code nessa imagem.<br><span style='font-size:14px; font-weight:normal; color:#ffcdd2;'>Tire a foto de cima da nota, bem quadrada e com boa iluminação.</span>";
+            box.className = "resultado erro";
+        });
+}
 
 function enviarDadosParaNuvem(linkQRCode) {
     const box = document.getElementById('resultado-box');
     const statusTxt = document.getElementById('status');
 
-    // Executa a chamada RPC integrada direto nas tabelas seguras da sua nuvem
     fetch(`${SUPABASE_URL}/rest/v1/rpc/validar_e_computar_nota`, {
         method: 'POST',
         headers: { 
@@ -105,12 +133,10 @@ function enviarDadosParaNuvem(linkQRCode) {
         statusTxt.innerText = "";
         box.style.display = "block";
         
-        // Trata erro de nota duplicada retornado pela nossa função PostgreSQL
         if (dados.erro) {
             box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${dados.erro}</span>`;
             box.className = "resultado erro";
         } else {
-            // Exibe mensagem de sucesso e o saldo atualizado da tabela saldo_jogadores
             box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${dados.mensagem}</span><br><br>💰 Saldo Atual: ${dados.novo_saldo} Terramoedas`;
             box.className = "resultado sucesso";
         }
