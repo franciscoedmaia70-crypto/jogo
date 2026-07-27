@@ -8,93 +8,82 @@
     <style>
         body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
         .container { max-width: 400px; margin: 0 auto; }
-        button { background: #00e676; border: none; padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; color: #000; width: 100%; margin-top: 20px; }
-        .video-wrapper { position: relative; width: 100%; max-width: 350px; margin: 20px auto; display: none; border-radius: 12px; overflow: hidden; border: 2px solid #333; }
-        video { width: 100%; height: auto; background: #222; }
-        /* Desenha o quadrado verde de foco na tela para ajudar o jogador a enquadrar */
-        .mira-scan { position: absolute; top: 50%; left: 50%; width: 200px; height: 200px; margin-top: -100px; margin-left: -100px; border: 3px dashed #00e676; border-radius: 8px; box-shadow: 0 0 0 2000px rgba(0,0,0,0.4); pointer-events: none; }
-        .resultado { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; display: none; }
-        .sucesso { background: #1b5e20; color: #a5d6a7; }
-        .erro { background: #b71c1c; color: #ef9a9a; }
+        button { background: #00e676; border: none; padding: 20px; font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer; color: #000; width: 100%; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,230,118,0.3); }
+        input[type="text"] { padding: 12px; width: 90%; border-radius: 8px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444; text-align: center; }
+        
+        /* Estilos dos alertas grandes para o jogador */
+        .resultado { margin-top: 25px; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 18px; display: none; line-height: 1.5; }
+        .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; box-shadow: 0 0 15px rgba(27,94,32,0.5); }
+        .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; box-shadow: 0 0 15px rgba(183,28,28,0.5); }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>🪙 Validador Terracoin</h2>
-    <input type="text" id="jogador" value="jogador_Eudes_Teste" style="padding: 10px; width: 90%; border-radius: 5px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444;">
+    <h2>🪙 Sistema Terracoin</h2>
     
-    <div class="video-wrapper" id="camera-box">
-        <video id="webcam" autoplay playsinline muted></video>
-        <div class="mira-scan"></div>
-    </div>
+    <label style="display:block; text-align:left; margin-bottom:5px; color:#888; font-size:14px;">Identificação do Jogador:</label>
+    <input type="text" id="jogador" value="jogador_Eudes_Teste">
     
-    <button onclick="ligarCameraNativa()">📷 Abrir Câmera</button>
+    <!-- Botão transparente e único para o usuário -->
+    <button onclick="document.getElementById('input-camera').click()">📷 ESCANEAR NOTA FISCAL</button>
     
+    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="processarFotoNativa(event)">
+    
+    <!-- Caixa onde as mensagens de sucesso ou erro vão pular na tela -->
     <div id="resultado-box" class="resultado"></div>
-    <p id="status" style="color:#888; font-size:14px;"></p>
+    <p id="status" style="color:#00e676; font-size:16px; font-weight: bold; margin-top: 20px;"></p>
 </div>
 
-<canvas id="canvas" style="display: none;"></canvas>
+<canvas id="hidden-canvas" style="display: none;"></canvas>
 
 <script>
 const URL_SUA_NUVEM = "https://supabase.co"; 
 
-const video = document.getElementById("webcam");
-const cameraBox = document.getElementById("camera-box");
-const canvasElement = document.getElementById("canvas");
-const canvas = canvasElement.getContext("2d");
-let streamAtiva = null;
+function processarFotoNativa(event) {
+    const arquivo = event.target.files[0];
+    if (!arquivo) return;
 
-async function ligarCameraNativa() {
-    document.getElementById('resultado-box').style.display = 'none';
-    document.getElementById('status').innerText = "Ligando câmera...";
+    const box = document.getElementById('resultado-box');
+    const statusTxt = document.getElementById('status');
     
-    try {
-        // Solicita vídeo liso na câmera traseira com foco contínuo nativo
-        streamAtiva = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment", focusMode: "continuous" }, 
-            audio: false 
-        });
-        video.srcObject = streamAtiva;
-        cameraBox.style.display = "block";
-        document.getElementById('status').innerText = "Coloque o QR Code dentro do quadrado verde.";
-        
-        requestAnimationFrame(lerQRCodeAutomatico);
-    } catch (err) {
-        document.getElementById('status').innerText = "Erro ao abrir câmera.";
-    }
-}
+    box.style.display = 'none';
+    statusTxt.innerText = "⏳ Lendo imagem em segundo plano...";
 
-function lerQRCodeAutomatico() {
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        // Forçamos o tamanho do scanner a analisar apenas uma área central de 300x300 pixels
-        // Isso remove o peso da imagem gigante e foca nos detalhes do QR Code
-        canvasElement.height = 300;
-        canvasElement.width = 300;
-        
-        // Recorta apenas o centro exato do vídeo da câmera
-        const sX = (video.videoWidth - 300) / 2;
-        const sY = (video.videoHeight - 300) / 2;
-        canvas.drawImage(video, sX, sY, 300, 300, 0, 0, 300, 300);
-        
-        let imageData = canvas.getImageData(0, 0, 300, 300);
-        let code = jsQR(imageData.data, 300, 300, { inversionAttempts: "dontInvert" });
-
-        if (code) {
-            // Captura automática instantânea! Desliga os sensores físicos do celular
-            streamAtiva.getTracks().forEach(track => track.stop());
-            cameraBox.style.display = "none";
-            document.getElementById('status').innerText = "Link detectado! Enviando para o Supabase...";
+    const leitorArquivo = new FileReader();
+    leitorArquivo.onload = function(e) {
+        const imagem = new Image();
+        imagem.onload = function() {
+            const canvasElement = document.getElementById("hidden-canvas");
+            const canvas = canvasElement.getContext("2d");
             
-            enviarParaSupabase(code.data);
-            return;
-        }
-    }
-    requestAnimationFrame(lerQRCodeAutomatico);
+            // Define tamanho ideal para leitura rápida
+            canvasElement.width = 800;
+            canvasElement.height = (imagem.height / imagem.width) * 800;
+            canvas.drawImage(imagem, 0, 0, canvasElement.width, canvasElement.height);
+            
+            let imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+            let code = jsQR(imageData.data, canvasElement.width, canvasElement.height, { inversionAttempts: "dontInvert" });
+
+            if (code) {
+                statusTxt.innerText = "🚀 Enviando dados para validação fiscal...";
+                enviarDadosParaNuvem(code.data);
+            } else {
+                statusTxt.innerText = "";
+                box.style.display = "block";
+                box.innerHTML = "❌ Não foi possível ler o QR Code.<br><span style='font-size:14px; font-weight:normal; color:#ffcdd2;'>A foto pode ter ficado tremida ou muito longe. Aproxime a câmera bem perto do quadrado preto e branco do QR Code e tente novamente!</span>";
+                box.className = "resultado erro";
+            }
+        };
+        imagem.src = e.target.result;
+    };
+    leitorArquivo.readAsDataURL(arquivo);
 }
 
-function enviarParaSupabase(linkQRCode) {
+function enviarDadosParaNuvem(linkQRCode) {
+    const box = document.getElementById('resultado-box');
+    const statusTxt = document.getElementById('status');
+
     fetch(URL_SUA_NUVEM, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,21 +91,23 @@ function enviarParaSupabase(linkQRCode) {
     })
     .then(res => res.json().then(dados => ({ status: res.status, corpo: dados })))
     .then(resposta => {
-        const box = document.getElementById('resultado-box');
+        statusTxt.innerText = "";
         box.style.display = "block";
+        
         if (resposta.status === 200) {
-            box.innerHTML = `Sucesso!<br>Saldo Atual: ${resposta.corpo.novo_saldo} Terracoins`;
+            // ALERTA DE SUCESSO COMPLETO
+            box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${resposta.corpo.mensagem}</span><br><br>💰 Saldo Atual: ${resposta.corpo.novo_saldo} Terracoins`;
             box.className = "resultado sucesso";
         } else {
-            box.innerHTML = `Erro na Nuvem: ${resposta.corpo.erro}`;
+            // ALERTA DE REJEIÇÃO DA NUVEM
+            box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${resposta.corpo.erro}</span>`;
             box.className = "resultado erro";
         }
-        document.getElementById('status').innerText = "Pronto.";
     })
     .catch(() => {
-        const box = document.getElementById('resultado-box');
+        statusTxt.innerText = "";
         box.style.display = "block";
-        box.innerHTML = "Erro de conexão com o Supabase.";
+        box.innerHTML = "❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>Não foi possível conectar ao servidor do jogo. Verifique sua conexão com a internet.</span>";
         box.className = "resultado erro";
     });
 }
