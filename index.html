@@ -4,17 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Validador Terracoin</title>
-    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
         .container { max-width: 400px; margin: 0 auto; }
         button { background: #00e676; border: none; padding: 20px; font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer; color: #000; width: 100%; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,230,118,0.3); }
         input[type="text"] { padding: 12px; width: 90%; border-radius: 8px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444; text-align: center; }
-        
-        /* Estilos dos alertas grandes para o jogador */
         .resultado { margin-top: 25px; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 18px; display: none; line-height: 1.5; }
-        .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; box-shadow: 0 0 15px rgba(27,94,32,0.5); }
-        .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; box-shadow: 0 0 15px rgba(183,28,28,0.5); }
+        .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; }
+        .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; }
     </style>
 </head>
 <body>
@@ -25,22 +22,19 @@
     <label style="display:block; text-align:left; margin-bottom:5px; color:#888; font-size:14px;">Identificação do Jogador:</label>
     <input type="text" id="jogador" value="jogador_Eudes_Teste">
     
-    <!-- Botão transparente e único para o usuário -->
     <button onclick="document.getElementById('input-camera').click()">📷 ESCANEAR NOTA FISCAL</button>
     
-    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="processarFotoNativa(event)">
+    <!-- Input otimizado para compressão direta de imagem -->
+    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="detectarQRCodeNativo(event)">
     
-    <!-- Caixa onde as mensagens de sucesso ou erro vão pular na tela -->
     <div id="resultado-box" class="resultado"></div>
     <p id="status" style="color:#00e676; font-size:16px; font-weight: bold; margin-top: 20px;"></p>
 </div>
 
-<canvas id="hidden-canvas" style="display: none;"></canvas>
-
 <script>
 const URL_SUA_NUVEM = "https://supabase.co"; 
 
-function processarFotoNativa(event) {
+async function detectarQRCodeNativo(event) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
 
@@ -48,36 +42,64 @@ function processarFotoNativa(event) {
     const statusTxt = document.getElementById('status');
     
     box.style.display = 'none';
-    statusTxt.innerText = "⏳ Lendo imagem em segundo plano...";
+    statusTxt.innerText = "⏳ Analisando imagem de forma nativa...";
 
-    const leitorArquivo = new FileReader();
-    leitorArquivo.onload = function(e) {
-        const imagem = new Image();
-        imagem.onload = function() {
-            const canvasElement = document.getElementById("hidden-canvas");
-            const canvas = canvasElement.getContext("2d");
-            
-            // Define tamanho ideal para leitura rápida
-            canvasElement.width = 800;
-            canvasElement.height = (imagem.height / imagem.width) * 800;
-            canvas.drawImage(imagem, 0, 0, canvasElement.width, canvasElement.height);
-            
-            let imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-            let code = jsQR(imageData.data, canvasElement.width, canvasElement.height, { inversionAttempts: "dontInvert" });
-
-            if (code) {
-                statusTxt.innerText = "🚀 Enviando dados para validação fiscal...";
-                enviarDadosParaNuvem(code.data);
-            } else {
-                statusTxt.innerText = "";
-                box.style.display = "block";
-                box.innerHTML = "❌ Não foi possível ler o QR Code.<br><span style='font-size:14px; font-weight:normal; color:#ffcdd2;'>A foto pode ter ficado tremida ou muito longe. Aproxime a câmera bem perto do quadrado preto e branco do QR Code e tente novamente!</span>";
-                box.className = "resultado erro";
+    // Cria um objeto de imagem utilizável pelo navegador
+    const imagemBlob = URL.createObjectURL(arquivo);
+    const imagem = new Image();
+    
+    imagem.onload = async function() {
+        try {
+            // Verifica se o navegador possui o detector oficial ultra rápido
+            if (!('BarcodeDetector' in window)) {
+                // Fallback dinâmico caso o navegador exija ativação experimental
+                throw new Error("Formatos de imagem incompatíveis ou permissão pendente.");
             }
-        };
-        imagem.src = e.target.result;
+
+            const detector = new BarcodeDetector({ formats: ['qr_code'] });
+            const barcodes = await detector.detect(imagem);
+
+            if (barcodes.length > 0) {
+                statusTxt.innerText = "🚀 Enviando dados para validação fiscal...";
+                enviarDadosParaNuvem(barcodes[0].rawValue);
+            } else {
+                throw new Error("QR Code não encontrado.");
+            }
+        } catch (err) {
+            // Se o detector nativo falhar ou não achar, tentamos processar reduzindo a foto (Evita travamentos)
+            processarFotoReduzida(imagem, box, statusTxt);
+        }
     };
-    leitorArquivo.readAsDataURL(arquivo);
+    imagem.src = imageBlob;
+}
+
+function processarFotoReduzida(imagem, box, statusTxt) {
+    // Criamos um canvas dinâmico na memória apenas para carregar a biblioteca jsQR de forma isolada
+    const script = document.createElement('script');
+    script.src = "https://jsdelivr.net";
+    script.onload = function() {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        
+        // Reduzimos drasticamente a foto para 600px para o processador do celular ler INSTANTANEAMENTE
+        canvas.width = 600;
+        canvas.height = (imagem.height / imagem.width) * 600;
+        ctx.drawImage(imagem, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, canvas.width, canvas.height, { inversionAttempts: "dontInvert" });
+
+        if (code) {
+            statusTxt.innerText = "🚀 Enviando dados para validação fiscal...";
+            enviarDadosParaNuvem(code.data);
+        } else {
+            statusTxt.innerText = "";
+            box.style.display = "block";
+            box.innerHTML = "❌ Não foi possível ler o QR Code.<br><span style='font-size:14px; font-weight:normal; color:#ffcdd2;'>Aproxime mais a câmera e tire a foto bem focada no quadrado do QR Code.</span>";
+            box.className = "resultado erro";
+        }
+    };
+    document.head.appendChild(script);
 }
 
 function enviarDadosParaNuvem(linkQRCode) {
@@ -93,13 +115,10 @@ function enviarDadosParaNuvem(linkQRCode) {
     .then(resposta => {
         statusTxt.innerText = "";
         box.style.display = "block";
-        
         if (resposta.status === 200) {
-            // ALERTA DE SUCESSO COMPLETO
             box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${resposta.corpo.mensagem}</span><br><br>💰 Saldo Atual: ${resposta.corpo.novo_saldo} Terracoins`;
             box.className = "resultado sucesso";
         } else {
-            // ALERTA DE REJEIÇÃO DA NUVEM
             box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${resposta.corpo.erro}</span>`;
             box.className = "resultado erro";
         }
@@ -107,7 +126,7 @@ function enviarDadosParaNuvem(linkQRCode) {
     .catch(() => {
         statusTxt.innerText = "";
         box.style.display = "block";
-        box.innerHTML = "❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>Não foi possível conectar ao servidor do jogo. Verifique sua conexão com a internet.</span>";
+        box.innerHTML = "❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>Falha na conexão com o Supabase.</span>";
         box.className = "resultado erro";
     });
 }
