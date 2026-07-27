@@ -7,13 +7,18 @@
     <style>
         body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
         .container { max-width: 400px; margin: 0 auto; }
-        button { background: #00e676; border: none; padding: 20px; font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer; color: #000; width: 100%; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,230,118,0.3); }
         input[type="text"] { padding: 12px; width: 90%; border-radius: 8px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444; text-align: center; }
         .resultado { margin-top: 25px; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 18px; display: none; line-height: 1.5; }
         .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; }
         .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; }
-        #log { margin-top: 15px; font-size: 13px; color: #aaa; text-align: left; background: #1a1a1a; padding: 10px; border-radius: 8px; max-height: 100px; overflow-y: auto; display: none; }
+        
+        /* Container do scanner de vídeo profissional */
+        #reader { width: 100%; background: #1a1a1a; border-radius: 16px; overflow: hidden; border: 2px solid #333; margin-top: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        #reader button { background: #00e676 !important; color: #000 !important; border: none !important; padding: 12px 20px !important; font-size: 14px !important; font-weight: bold !important; border-radius: 8px !important; cursor: pointer !important; margin: 10px !important; text-transform: uppercase; }
+        #reader select { background: #222 !important; color: #fff !important; border: 1px solid #444 !important; padding: 8px !important; border-radius: 6px !important; margin: 10px !important; }
     </style>
+    <!-- Importação da biblioteca de alta performance para scanner de câmera web -->
+    <script src="https://unpkg.com" type="text/javascript"></script>
 </head>
 <body>
 
@@ -23,98 +28,63 @@
     <label style="display:block; text-align:left; margin-bottom:5px; color:#888; font-size:14px;">Identificação do Jogador:</label>
     <input type="text" id="jogador" value="jogador_Eudes_Teste">
     
-    <!-- Botão que aciona a câmera nativa do celular para tirar foto -->
-    <button onclick="document.getElementById('input-camera').click()">📷 ESCANEAR NOTA FISCAL</button>
-    
-    <!-- Input oculto que gerencia o arquivo da foto -->
-    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="detectarQRCode(event)">
+    <!-- O Scanner de vídeo e os controles de câmera serão renderizados dentro desta DIV abaixo -->
+    <div id="reader"></div>
     
     <div id="resultado-box" class="resultado"></div>
     <p id="status" style="color:#00e676; font-size:16px; font-weight: bold; margin-top: 20px;"></p>
-    <div id="log"></div>
 </div>
 
 <script>
-// CREDENCIAIS REAIS DO SEU PROJETO CONSOLIDADO
+// CONFIGURAÇÕES CONSOLIDADAS DO SEU PROJETO SUPABASE
 const SUPABASE_URL = "https://supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_0OAqqEGs9Vd1tMr--xwCgw_IGGupw8h"; 
 
-function adicionarLog(texto) {
-    const logBox = document.getElementById('log');
-    logBox.style.display = 'block';
-    logBox.innerHTML += `> ${texto}<br>`;
-    logBox.scrollTop = logBox.scrollHeight;
+// Inicialização do Scanner com parâmetros otimizados para cupons fiscais (NFC-e)
+const html5QrcodeScanner = new Html5QrcodeScanner(
+    "reader", 
+    { 
+        fps: 20, // Executa a varredura de frames 20 vezes por segundo para capturas instantâneas
+        qrbox: function(viewfinderWidth, viewfinderHeight) {
+            // Desenha um quadrado de mira equivalente a 75% da área visível da tela
+            const minEdgePercentage = 0.75;
+            const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+            const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
+            return {
+                width: qrboxSize,
+                height: qrboxSize
+            };
+        },
+        aspectRatio: 1.0, // Força aspecto quadrado para melhor foco e enquadramento central
+        experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true // Ativa aceleração por hardware nativa do chip do celular se disponível
+        }
+    },
+    /* verbose= */ false
+);
+
+// Função engatada automaticamente no milésimo de segundo em que o QR Code for decodificado
+function onScanSuccess(decodedText, decodedResult) {
+    // Desliga e limpa o scanner da tela para evitar requisições duplicadas seguidas
+    html5QrcodeScanner.clear();
+    document.getElementById("reader").style.display = "none";
+    
+    document.getElementById('status').innerText = "🚀 Enviando dados para validação fiscal...";
+    enviarDadosParaNuvem(decodedText);
 }
 
-function detectarQRCode(event) {
-    const arquivo = event.target.files[0]; // Correção crucial do índice da lista de arquivos
-    if (!arquivo) return;
-
-    const box = document.getElementById('resultado-box');
-    const statusTxt = document.getElementById('status');
-    
-    box.style.display = 'none';
-    document.getElementById('log').innerHTML = "";
-    statusTxt.innerText = "⏳ Carregando imagem...";
-    adicionarLog("Foto capturada e carregada no navegador.");
-
-    // Cria a imagem temporária na memória do navegador
-    const imagemBlob = URL.createObjectURL(arquivo);
-    const imagem = new Image();
-    
-    imagem.onload = function() {
-        adicionarLog("Imagem processada. Iniciando análise do QR Code...");
-        
-        // Carrega dinamicamente a biblioteca jsQR de forma isolada e segura
-        const script = document.createElement('script');
-        script.src = "https://jsdelivr.net";
-        
-        script.onload = function() {
-            adicionarLog("Biblioteca de leitura ativa.");
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext("2d");
-            
-            // Reduz a dimensão para 800px para o celular processar sem travamentos
-            const maxDimensao = 800;
-            let largura = imagem.width;
-            let altura = imagem.height;
-
-            if (largura > maxDimensao) {
-                altura = (imagem.height / imagem.width) * maxDimensao;
-                largura = maxDimensao;
-            }
-
-            canvas.width = largura;
-            canvas.height = altura;
-            ctx.drawImage(imagem, 0, 0, canvas.width, canvas.height);
-            adicionarLog(`Imagem otimizada para ${largura}x${Math.round(altura)}px.`);
-            
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            // Busca o QR Code testando padrões de cores normais e invertidos (sombras)
-            const code = jsQR(imageData.data, canvas.width, canvas.height, { inversionAttempts: "attemptBoth" });
-
-            if (code && code.data) {
-                adicionarLog("QR Code localizado com sucesso!");
-                statusTxt.innerText = "🚀 Enviando dados para validação fiscal...";
-                enviarDadosParaNuvem(code.data);
-            } else {
-                adicionarLog("Erro: O QR Code não foi identificado na imagem.");
-                statusTxt.innerText = "";
-                box.style.display = "block";
-                box.innerHTML = "❌ Não foi possível ler o QR Code.<br><span style='font-size:14px; font-weight:normal; color:#ffcdd2;'>Aproxime um pouco mais a câmera, foque bem no quadrado e evite dobras ou reflexos no papel.</span>";
-                box.className = "resultado erro";
-            }
-        };
-        document.head.appendChild(script);
-    };
-    imagem.src = imagemBlob;
+function onScanFailure(error) {
+    // Ignora frames em branco ou desfocados enquanto o usuário move a câmera até o alvo
 }
+
+// Renderiza a interface padrão da biblioteca no box
+html5QrcodeScanner.render(onScanSuccess, onScanFailure);
 
 function enviarDadosParaNuvem(linkQRCode) {
     const box = document.getElementById('resultado-box');
     const statusTxt = document.getElementById('status');
-    adicionarLog("Conectando ao banco de dados Supabase...");
 
+    // Executa a chamada RPC integrada direto nas tabelas seguras da sua nuvem
     fetch(`${SUPABASE_URL}/rest/v1/rpc/validar_e_computar_nota`, {
         method: 'POST',
         headers: { 
@@ -135,18 +105,17 @@ function enviarDadosParaNuvem(linkQRCode) {
         statusTxt.innerText = "";
         box.style.display = "block";
         
+        // Trata erro de nota duplicada retornado pela nossa função PostgreSQL
         if (dados.erro) {
-            adicionarLog("Validação recusada: Nota já utilizada.");
             box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${dados.erro}</span>`;
             box.className = "resultado erro";
         } else {
-            adicionarLog("Moedas adicionadas com sucesso no banco!");
+            // Exibe mensagem de sucesso e o saldo atualizado da tabela saldo_jogadores
             box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${dados.mensagem}</span><br><br>💰 Saldo Atual: ${dados.novo_saldo} Terramoedas`;
             box.className = "resultado sucesso";
         }
     })
     .catch((erro) => {
-        adicionarLog("Falha crítica de conexão.");
         statusTxt.innerText = "";
         box.style.display = "block";
         box.innerHTML = "❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>Falha na conexão com o sistema Terracoin.</span>";
