@@ -4,13 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Validador Terracoin</title>
-    <!-- Biblioteca leve para decodificar o QR Code -->
     <script src="https://jsdelivr.net"></script>
     <style>
-        body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; }
+        body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
         .container { max-width: 400px; margin: 0 auto; }
         button { background: #00e676; border: none; padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; color: #000; width: 100%; margin-top: 20px; }
-        video { width: 100%; max-width: 350px; border-radius: 12px; margin-top: 20px; background: #222; display: none; }
+        .video-wrapper { position: relative; width: 100%; max-width: 350px; margin: 20px auto; display: none; border-radius: 12px; overflow: hidden; border: 2px solid #333; }
+        video { width: 100%; height: auto; background: #222; }
+        /* Desenha o quadrado verde de foco na tela para ajudar o jogador a enquadrar */
+        .mira-scan { position: absolute; top: 50%; left: 50%; width: 200px; height: 200px; margin-top: -100px; margin-left: -100px; border: 3px dashed #00e676; border-radius: 8px; box-shadow: 0 0 0 2000px rgba(0,0,0,0.4); pointer-events: none; }
         .resultado { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; display: none; }
         .sucesso { background: #1b5e20; color: #a5d6a7; }
         .erro { background: #b71c1c; color: #ef9a9a; }
@@ -22,73 +24,81 @@
     <h2>🪙 Validador Terracoin</h2>
     <input type="text" id="jogador" value="jogador_Eudes_Teste" style="padding: 10px; width: 90%; border-radius: 5px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444;">
     
-    <!-- Elemento de vídeo direto do celular -->
-    <video id="webcam" autoplay playsinline muted></video>
+    <div class="video-wrapper" id="camera-box">
+        <video id="webcam" autoplay playsinline muted></video>
+        <div class="mira-scan"></div>
+    </div>
     
-    <button onclick="ligarCamera()">📷 Abrir Câmera</button>
+    <button onclick="ligarCameraNativa()">📷 Abrir Câmera</button>
     
     <div id="resultado-box" class="resultado"></div>
     <p id="status" style="color:#888; font-size:14px;"></p>
 </div>
 
-<!-- Canvas oculto apenas para processar a leitura do link -->
 <canvas id="canvas" style="display: none;"></canvas>
 
 <script>
 const URL_SUA_NUVEM = "https://supabase.co"; 
 
 const video = document.getElementById("webcam");
+const cameraBox = document.getElementById("camera-box");
 const canvasElement = document.getElementById("canvas");
 const canvas = canvasElement.getContext("2d");
 let streamAtiva = null;
 
-async function ligarCamera() {
+async function ligarCameraNativa() {
     document.getElementById('resultado-box').style.display = 'none';
     document.getElementById('status').innerText = "Ligando câmera...";
     
     try {
-        streamAtiva = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+        // Solicita vídeo liso na câmera traseira com foco contínuo nativo
+        streamAtiva = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment", focusMode: "continuous" }, 
+            audio: false 
+        });
         video.srcObject = streamAtiva;
-        video.style.display = "block";
-        document.getElementById('status').innerText = "Filmando... Enquadre o QR Code.";
+        cameraBox.style.display = "block";
+        document.getElementById('status').innerText = "Coloque o QR Code dentro do quadrado verde.";
         
-        // Inicia a checagem contínua do link
-        requestAnimationFrame(lerQRCode);
+        requestAnimationFrame(lerQRCodeAutomatico);
     } catch (err) {
         document.getElementById('status').innerText = "Erro ao abrir câmera.";
     }
 }
 
-function lerQRCode() {
+function lerQRCodeAutomatico() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvasElement.height = video.videoHeight;
-        canvasElement.width = video.videoWidth;
-        canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+        // Forçamos o tamanho do scanner a analisar apenas uma área central de 300x300 pixels
+        // Isso remove o peso da imagem gigante e foca nos detalhes do QR Code
+        canvasElement.height = 300;
+        canvasElement.width = 300;
         
-        let imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-        let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+        // Recorta apenas o centro exato do vídeo da câmera
+        const sX = (video.videoWidth - 300) / 2;
+        const sY = (video.videoHeight - 300) / 2;
+        canvas.drawImage(video, sX, sY, 300, 300, 0, 0, 300, 300);
+        
+        let imageData = canvas.getImageData(0, 0, 300, 300);
+        let code = jsQR(imageData.data, 300, 300, { inversionAttempts: "dontInvert" });
 
         if (code) {
-            // QR Code encontrado! Encerra a câmera e envia o link direto para o Supabase
+            // Captura automática instantânea! Desliga os sensores físicos do celular
             streamAtiva.getTracks().forEach(track => track.stop());
-            video.style.display = "none";
-            document.getElementById('status').innerText = "Link capturado! Enviando para o Supabase...";
+            cameraBox.style.display = "none";
+            document.getElementById('status').innerText = "Link detectado! Enviando para o Supabase...";
             
             enviarParaSupabase(code.data);
             return;
         }
     }
-    requestAnimationFrame(lerQRCode);
+    requestAnimationFrame(lerQRCodeAutomatico);
 }
 
 function enviarParaSupabase(linkQRCode) {
     fetch(URL_SUA_NUVEM, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            id_jogador: document.getElementById('jogador').value, 
-            link_qrcode: linkQRCode 
-        })
+        body: JSON.stringify({ id_jogador: document.getElementById('jogador').value, link_qrcode: linkQRCode })
     })
     .then(res => res.json().then(dados => ({ status: res.status, corpo: dados })))
     .then(resposta => {
@@ -98,7 +108,7 @@ function enviarParaSupabase(linkQRCode) {
             box.innerHTML = `Sucesso!<br>Saldo Atual: ${resposta.corpo.novo_saldo} Terracoins`;
             box.className = "resultado sucesso";
         } else {
-            box.innerHTML = `Erro: ${resposta.corpo.erro}`;
+            box.innerHTML = `Erro na Nuvem: ${resposta.corpo.erro}`;
             box.className = "resultado erro";
         }
         document.getElementById('status').innerText = "Pronto.";
