@@ -1,46 +1,3 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Validador Terracoin</title>
-    <style>
-        body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
-        .container { max-width: 400px; margin: 0 auto; }
-        button { background: #00e676; border: none; padding: 20px; font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer; color: #000; width: 100%; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,230,118,0.3); }
-        input[type="text"] { padding: 12px; width: 90%; border-radius: 8px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444; text-align: center; }
-        .resultado { margin-top: 25px; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 18px; display: none; line-height: 1.5; }
-        .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; }
-        .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; }
-        
-        /* Estilos do Scanner de Vídeo */
-        .camera-box { width: 100%; max-width: 360px; margin: 20px auto 0 auto; border-radius: 16px; overflow: hidden; border: 3px solid #00e676; display: none; position: relative; background: #000; }
-        video { width: 100%; height: auto; display: block; }
-        .mira { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 2px dashed #00e676; box-shadow: 0 0 0 4000px rgba(0,0,0,0.5); pointer-events: none; }
-        #log { margin-top: 15px; font-size: 12px; color: #aaa; text-align: left; background: #1a1a1a; padding: 10px; border-radius: 8px; max-height: 90px; overflow-y: auto; display: block; border: 1px solid #333; }
-    </style>
-</head>
-<body>
-
-<div class="container">
-    <h2>🪙 Sistema Terracoin</h2>
-    
-    <label style="display:block; text-align:left; margin-bottom:5px; color:#888; font-size:14px;">Identificação do Jogador:</label>
-    <input type="text" id="jogador" value="jogador_Eudes_Teste">
-    
-    <button id="btn-scanner" onclick="alternarScanner()">📷 INICIAR SCANNER AO VIVO</button>
-    
-    <!-- Container do Vídeo Nativo da Câmera -->
-    <div id="camera-container" class="camera-box">
-        <video id="video" playsinline></video>
-        <div class="mira"></div>
-    </div>
-    
-    <div id="resultado-box" class="resultado"></div>
-    <p id="status" style="color:#00e676; font-size:16px; font-weight: bold; margin-top: 20px;"></p>
-    <div id="log">> Aguardando inicialização do scanner...</div>
-</div>
-
 <script>
 const SUPABASE_URL = "https://supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_0OAqqEGs9Vd1tMr--xwCgw_IGGupw8h"; 
@@ -56,7 +13,6 @@ function adicionarLog(texto) {
     logBox.scrollTop = logBox.scrollHeight;
 }
 
-// Controla o ligar/desligar do fluxo de vídeo nativo
 async function alternarScanner() {
     const btn = document.getElementById('btn-scanner');
     const container = document.getElementById('camera-container');
@@ -69,20 +25,24 @@ async function alternarScanner() {
 
     box.style.display = 'none';
     document.getElementById('log').innerHTML = "";
-    adicionarLog("Solicitando acesso nativo à câmera traseira...");
+    adicionarLog("Solicitando câmera com foco otimizado para documentos...");
     
     try {
-        // Força a inicialização da câmera traseira em alta definição
+        // Configurações avançadas nativas de foco e zoom para leitura de código de barras
         streamVideo = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: "environment" } }
+            video: { 
+                facingMode: { exact: "environment" },
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                focusMode: "continuous" // Força o foco dinâmico contínuo
+            }
         }).catch(() => {
-            // Fallback caso falte o parâmetro exato em computadores/testes
-            return navigator.mediaDevices.getUserMedia({ video: true });
+            return navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         });
 
         const video = document.getElementById('video');
         video.srcObject = streamVideo;
-        video.setAttribute("playsinline", true); // Exigido pelo Safari/iOS
+        video.setAttribute("playsinline", true);
         video.play();
 
         container.style.display = 'block';
@@ -90,28 +50,26 @@ async function alternarScanner() {
         btn.style.background = "#ff1744";
         escaneando = true;
         
-        adicionarLog("Câmera ligada. Carregando recursos do scanner...");
+        adicionarLog("Câmera conectada. Iniciando motor de busca de alta precisão...");
         carregarBibliotecaEIniciarLoop();
 
     } catch (erroCamera) {
         adicionarLog(`Erro ao abrir câmera: ${erroCamera.message}`);
-        alert("Permissão de câmera negada ou dispositivo indisponível.");
+        alert("Por favor, garanta que deu permissão de acesso à câmera no seu navegador.");
     }
 }
 
 function pararCamera() {
     const btn = document.getElementById('btn-scanner');
     const container = document.getElementById('camera-container');
-    
     if (streamVideo) {
         streamVideo.getTracks().forEach(track => track.stop());
     }
-    
     escaneando = false;
     container.style.display = 'none';
     btn.innerText = "📷 INICIAR SCANNER AO VIVO";
     btn.style.background = "#00e676";
-    adicionarLog("Scanner desligado.");
+    adicionarLog("Scanner finalizado.");
 }
 
 function carregarBibliotecaEIniciarLoop() {
@@ -119,11 +77,9 @@ function carregarBibliotecaEIniciarLoop() {
     script.src = "https://jsdelivr.net";
     
     script.onload = function() {
-        adicionarLog("Decodificador pronto. Escaneando frames ao vivo...");
+        adicionarLog("Processador visual ativado. Aponte para a nota fiscal.");
         canvasInvisivel = document.createElement("canvas");
         ctxInvisivel = canvasInvisivel.getContext("2d");
-        
-        // Dispara o loop de leitura contínua
         requestAnimationFrame(processarFrame);
     };
     document.head.appendChild(script);
@@ -134,39 +90,38 @@ function processarFrame() {
 
     const video = document.getElementById('video');
 
-    // Aguarda o vídeo estar pronto para ler as dimensões reais
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        // Reduzimos o frame do vídeo em tempo real para 450px para o celular ler instantaneamente sem travar
-        const largura = 450;
-        const altura = (video.videoHeight / video.videoWidth) * largura;
+        // Otimização matemática: 800px preserva a nitidez das linhas do QR Code sem sobrecarregar o hardware
+        const larguraAlvo = 800;
+        const alturaAlvo = (video.videoHeight / video.videoWidth) * larguraAlvo;
         
-        canvasInvisivel.width = largura;
-        canvasInvisivel.height = altura;
+        canvasInvisivel.width = larguraAlvo;
+        canvasInvisivel.height = alturaAlvo;
         
-        ctxInvisivel.drawImage(video, 0, 0, largura, altura);
-        const imageData = ctxInvisivel.getImageData(0, 0, largura, altura);
+        ctxInvisivel.drawImage(video, 0, 0, larguraAlvo, alturaAlvo);
+        const imageData = ctxInvisivel.getImageData(0, 0, larguraAlvo, alturaAlvo);
         
-        // Tenta ler o frame atual
-        const code = jsQR(imageData.data, largura, altura, { inversionAttempts: "dontInvert" });
+        // Configuração 'dontInvert' alterada para tentar ler QR Codes mesmo com sombras severas no papel
+        const code = jsQR(imageData.data, larguraAlvo, alturaAlvo, { 
+            inversionAttempts: "attemptBoth" 
+        });
 
         if (code && code.data) {
-            adicionarLog("MIRA ALINHADA! QR Code detectado!");
-            pararCamera(); // Desliga o vídeo imediatamente ao ler
+            adicionarLog("ALVO DETECTADO! Extraindo URL fiscal...");
+            pararCamera();
             
             document.getElementById('status').innerText = "🚀 Enviando dados para validação fiscal...";
             enviarDadosParaNuvem(code.data);
-            return; // Interrompe o loop
+            return;
         }
     }
-
-    // Continua executando a análise no próximo frame do vídeo
     requestAnimationFrame(processarFrame);
 }
 
 function enviarDadosParaNuvem(linkQRCode) {
     const box = document.getElementById('resultado-box');
     const statusTxt = document.getElementById('status');
-    adicionarLog("Conectando de forma segura ao Supabase...");
+    adicionarLog("Registrando transação na nuvem Terracoin...");
 
     fetch(`${SUPABASE_URL}/rest/v1/rpc/validar_e_computar_nota`, {
         method: 'POST',
@@ -181,7 +136,7 @@ function enviarDadosParaNuvem(linkQRCode) {
         })
     })
     .then(res => {
-        if (!res.ok) throw new Error(`Erro de resposta do banco (Status: ${res.status}).`);
+        if (!res.ok) throw new Error(`Servidor offline ou recusou chamada (Status: ${res.status})`);
         return res.json();
     })
     .then(dados => {
@@ -189,17 +144,17 @@ function enviarDadosParaNuvem(linkQRCode) {
         box.style.display = "block";
         
         if (dados.erro) {
-            adicionarLog(`Operação recusada: ${dados.erro}`);
+            adicionarLog(`Falha na validação: ${dados.erro}`);
             box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${dados.erro}</span>`;
             box.className = "resultado erro";
         } else {
-            adicionarLog("Moedas creditadas no banco de dados!");
+            adicionarLog("Saldo e histórico salvos na nuvem!");
             box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${dados.mensagem}</span><br><br>💰 Saldo Atual: ${dados.novo_saldo} Terramoedas`;
             box.className = "resultado sucesso";
         }
     })
     .catch((erro) => {
-        adicionarLog(`Falha na nuvem: ${erro.message}`);
+        adicionarLog(`Erro Crítico: ${erro.message}`);
         statusTxt.innerText = "";
         box.style.display = "block";
         box.innerHTML = `❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>${erro.message}</span>`;
@@ -207,5 +162,3 @@ function enviarDadosParaNuvem(linkQRCode) {
     });
 }
 </script>
-</body>
-</html>
