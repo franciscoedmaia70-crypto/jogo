@@ -7,11 +7,13 @@
     <style>
         body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
         .container { max-width: 400px; margin: 0 auto; }
-        .btn-principal { background: #00e676; border: none; padding: 20px; font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer; color: #000; width: 100%; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,230,118,0.3); text-transform: uppercase; display: block; }
+        .btn-principal { background: #00e676; border: none; padding: 20px; font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer; color: #000; width: 100%; margin-top: 15px; box-shadow: 0 4px 15px rgba(0,230,118,0.3); text-transform: uppercase; display: block; }
         input[type="text"] { padding: 12px; width: 90%; border-radius: 8px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444; text-align: center; }
         .resultado { margin-top: 25px; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 18px; display: none; line-height: 1.5; }
         .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; }
         .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; }
+        .passos { text-align: left; background: #1a1a1a; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-top: 25px; font-size: 14px; color: #ccc; line-height: 1.6; }
+        .passos b { color: #00e676; }
     </style>
 </head>
 <body>
@@ -22,64 +24,45 @@
     <label style="display:block; text-align:left; margin-bottom:5px; color:#888; font-size:14px;">Identificação do Jogador:</label>
     <input type="text" id="jogador" value="jogador_Eudes_Teste">
     
-    <button id="btn-iniciar" class="btn-principal" onclick="document.getElementById('input-camera').click()">📷 ESCANEAR NOTA FISCAL</button>
-    
-    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="processarFluxoHibrido(event)">
+    <label style="display:block; text-align:left; margin-bottom:5px; color:#888; font-size:14px; margin-top: 20px;">Cole o Link da Nota Fiscal abaixo:</label>
+    <!-- Campo de texto de alta velocidade -->
+    <input type="text" id="link-sefaz" placeholder="https://www.sefaz... ou chNFe=...">
+
+    <button class="btn-principal" onclick="validarLinkNativo()">💰 RESGATAR TERRACOINS</button>
     
     <div id="resultado-box" class="resultado"></div>
     <p id="status" style="color:#00e676; font-size:16px; font-weight: bold; margin-top: 20px;"></p>
+
+    <!-- Instruções didáticas de jogo direto na tela -->
+    <div class="passos">
+        <h3 style="margin-top:0; color:#fff; font-size:16px; border-bottom:1px solid #333; padding-bottom:5px;">📋 Como Funciona:</h3>
+        1. Abra o app de <b>Câmera do seu celular</b> e aponte para a Nota Fiscal.<br>
+        2. Toque no link do governo que vai aparecer na tela.<br>
+        3. Copie o endereço do site na barra do navegador do celular.<br>
+        4. Volte ao jogo, cole no campo acima e clique em resgatar!
+    </div>
 </div>
 
 <script>
 const SUPABASE_URL = "https://supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_0OAqqEGs9Vd1tMr--xwCgw_IGGupw8h"; 
 
-function processarFluxoHibrido(event) {
-    const arquivo = event.target.files[0]; // Captura correta do arquivo de foto físico
-    if (!arquivo) return;
-
+function validarLinkNativo() {
+    const textoInjetado = document.getElementById('link-sefaz').value.trim();
     const box = document.getElementById('resultado-box');
     const statusTxt = document.getElementById('status');
+
+    if (!textoInjetado) {
+        box.style.display = 'block';
+        box.innerHTML = "❌ Campo Vazio!<br><span style='font-size:14px; font-weight:normal;'>Por favor, insira o link gerado pelo scanner antes de prosseguir.</span>";
+        box.className = "resultado erro";
+        return;
+    }
 
     box.style.display = 'none';
-    statusTxt.innerText = "⏳ Enviando imagem para o supercomputador óptico...";
+    statusTxt.innerText = "🚀 Processando dados fiscais com segurança na nuvem...";
 
-    // Envia a imagem original diretamente para processamento livre em nuvem dedicada
-    const formData = new FormData();
-    formData.append("file", arquivo);
-
-    fetch("https://qrserver.com", {
-        method: "POST",
-        body: formData
-    })
-    .then(res => {
-        if (!res.ok) throw new Error("Falha ao comunicar com o servidor óptico.");
-        return res.json();
-    })
-    .then(resultadoNuvem => {
-        // Coleta o link extraído da foto
-        const textoDecodificado = resultadoNuvem[0].symbol[0].data;
-        
-        if (textoDecodificado && textoDecodificado !== null) {
-            statusTxt.innerText = "🚀 Link identificado! Computando moedas no Supabase...";
-            enviarTextoLimpoParaSupabase(textoDecodificado);
-        } else {
-            throw new Error("O motor em nuvem não achou um QR Code nítido. Tire a foto mais de perto.");
-        }
-    })
-    .catch(erro => {
-        statusTxt.innerText = "";
-        box.style.display = "block";
-        box.innerHTML = `❌ Erro de Leitura:<br><span style='font-size:14px; font-weight:normal; color:#ffcdd2;'>${erro.message}</span>`;
-        box.className = "resultado erro";
-    });
-}
-
-function enviarTextoLimpoParaSupabase(linkConfirmado) {
-    const box = document.getElementById('resultado-box');
-    const statusTxt = document.getElementById('status');
-
-    // Manda apenas o texto puro da URL para a RPC do Supabase (Evita travamentos de CORS)
+    // Envia apenas os caracteres da string diretamente para a RPC do seu banco de dados
     fetch(`${SUPABASE_URL}/rest/v1/rpc/validar_e_computar_nota`, {
         method: 'POST',
         headers: { 
@@ -89,29 +72,31 @@ function enviarTextoLimpoParaSupabase(linkConfirmado) {
         },
         body: JSON.stringify({ 
             p_id_jogador: document.getElementById('jogador').value, 
-            p_link_qrcode: linkConfirmado 
+            p_link_qrcode: textoInjetado 
         })
     })
     .then(res => {
-        if (!res.ok) throw new Error("O banco recusou a conexão.");
+        if (!res.ok) throw new Error("Falha na comunicação com o banco.");
         return res.json();
     })
     .then(dados => {
         statusTxt.innerText = "";
         box.style.display = "block";
         
+        // Trata duplicidade ou erros gerados pela Regex do banco de dados
         if (dados.erro) {
             box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${dados.erro}</span>`;
             box.className = "resultado erro";
         } else {
             box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${dados.mensagem}</span><br><br>💰 Saldo Atual: ${dados.novo_saldo} Terramoedas`;
             box.className = "resultado sucesso";
+            document.getElementById('link-sefaz').value = ""; // Limpa a barra para o próximo envio
         }
     })
     .catch((erro) => {
         statusTxt.innerText = "";
         box.style.display = "block";
-        box.innerHTML = `❌ Erro de Nuvem:<br><span style='font-size:15px; font-weight:normal;'>${erro.message}. Verifique a internet.</span>`;
+        box.innerHTML = "❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>O link inserido não possui os padrões de uma nota fiscal válida ou o sistema está fora do ar.</span>";
         box.className = "resultado erro";
     });
 }
