@@ -15,7 +15,7 @@
         #preview-container { margin-top: 20px; display: none; }
         #preview-img { max-width: 100%; max-height: 180px; border-radius: 8px; border: 2px solid #444; }
     </style>
-    <!-- Importação de biblioteca ultra estável e leve via CDN global rápido -->
+    <!-- Importação do leitor ultra estável via CDN Cloudflare -->
     <script src="https://cloudflare.com"></script>
 </head>
 <body>
@@ -28,7 +28,7 @@
     
     <button id="btn-iniciar" class="btn-principal" onclick="document.getElementById('input-camera').click()">📷 ESCANEAR NOTA FISCAL</button>
     
-    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="processarNotaMultiQuadrante(event)">
+    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="carregarEProcessarNota(event)">
     
     <div id="preview-container">
         <p style="color:#aaa; font-size:14px; margin-bottom:5px;">Filtro de Alto Contraste Ativo:</p>
@@ -43,82 +43,88 @@
 const SUPABASE_URL = "https://supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_0OAqqEGs9Vd1tMr--xwCgw_IGGupw8h"; 
 
-function processarNotaMultiQuadrante(event) {
-    const arquivo = event.target.files[0];
+function carregarEProcessarNota(event) {
+    const arquivo = event.target.files[0]; // Captura correta do arquivo físico
     if (!arquivo) return;
 
+    const box = document.getElementById('resultado-box');
+    const statusTxt = document.getElementById('status');
+    
+    box.style.display = 'none';
+    statusTxt.innerText = "⏳ Convertendo e processando imagem...";
+
+    // FileReader evita o bloqueio de segurança do Safari/iPhone
+    const leitor = new FileReader();
+    
+    leitor.onload = function(e) {
+        const imagem = new Image();
+        imagem.onload = function() {
+            analisarMatrizPixels(imagem);
+        };
+        imagem.src = e.target.result;
+    };
+    
+    leitor.readAsDataURL(arquivo);
+}
+
+function analisarMatrizPixels(imagem) {
     const box = document.getElementById('resultado-box');
     const statusTxt = document.getElementById('status');
     const previewContainer = document.getElementById('preview-container');
     const previewImg = document.getElementById('preview-img');
 
-    box.style.display = 'none';
-    statusTxt.innerText = "⏳ Tratando e aplicando filtros de nitidez...";
-
-    const imagemBlob = URL.createObjectURL(arquivo);
-    const imagem = new Image();
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
     
-    imagem.onload = function() {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        
-        // Redimensiona mantendo a proporção para leitura rápida
-        const maxDimensao = 800;
-        let largura = imagem.width;
-        let altura = imagem.height;
-        if (largura > maxDimensao) {
-            altura = (imagem.height / imagem.width) * maxDimensao;
-            largura = maxDimensao;
-        }
-        
-        canvas.width = largura;
-        canvas.height = altura;
-        
-        // Aplica filtro de alto contraste estilo Otsu via GPU (Remove sombras do papel amassado)
-        ctx.filter = 'grayscale(1) contrast(3.5)';
-        ctx.drawImage(imagem, 0, 0, largura, altura);
-        
-        // Atualiza o preview na tela instantaneamente
-        previewImg.src = canvas.toDataURL("image/jpeg", 0.8);
-        previewContainer.style.display = "block";
-        
-        statusTxt.innerText = "⏳ Analisando mapeamento de pixels...";
+    // Otimização matemática baseada no seu motor de gabaritos
+    const maxDimensao = 800;
+    let largura = imagem.width;
+    let altura = imagem.height;
+    if (largura > maxDimensao) {
+        altura = (imagem.height / imagem.width) * maxDimensao;
+        largura = maxDimensao;
+    }
+    
+    canvas.width = largura;
+    canvas.height = altura;
+    
+    // Filtro óptico processado na GPU do celular (Remoção total de sombras)
+    ctx.filter = 'grayscale(1) contrast(3.5)';
+    ctx.drawImage(imagem, 0, 0, largura, altura);
+    
+    // Mostra o preview tratado instantaneamente
+    const imageDataUrl = canvas.toDataURL("image/jpeg", 0.8);
+    previewImg.src = imageDataUrl;
+    previewContainer.style.display = "block";
+    
+    statusTxt.innerText = "⏳ Extraindo dados do QR Code...";
 
-        // Captura os dados processados em preto e branco puro
-        const imageData = ctx.getImageData(0, 0, largura, altura);
-        
-        // Passada 1: Tenta ler a imagem inteira tratada
-        let code = jsQR(imageData.data, largura, altura, { inversionAttempts: "attemptBoth" });
+    // Executa a leitura da matriz
+    const imageData = ctx.getImageData(0, 0, largura, altura);
+    let code = jsQR(imageData.data, largura, altura, { inversionAttempts: "attemptBoth" });
 
-        // Passada 2: Se falhar, foca dinamicamente apenas na região do QR Code isolando ruídos
-        if (!code) {
-            // Cria um canvas menor focado para ampliar detalhes dos pontos do QR Code
-            const canvasFocado = document.createElement("canvas");
-            const ctxFocado = canvasFocado.getContext("2d");
-            canvasFocado.width = 500;
-            canvasFocado.height = 500;
-            
-            // Recorta a área central/inferior mais provável de conter o código
-            ctxFocado.filter = 'grayscale(1) contrast(4)';
-            ctxFocado.drawImage(imagem, largura*0.05, altura*0.1, largura*0.9, altura*0.8, 0, 0, 500, 500);
-            
-            const imageDataFocada = ctxFocado.getImageData(0, 0, 500, 500);
-            code = jsQR(imageDataFocada.data, 500, 500, { inversionAttempts: "attemptBoth" });
-        }
-
-        if (code && code.data) {
-            statusTxt.innerText = "🚀 Enviando dados para validação fiscal...";
-            enviarDadosParaNuvem(code.data);
-        } else {
-            statusTxt.innerText = "";
-            box.style.display = "block";
-            box.innerHTML = "❌ Não foi possível ler o QR Code.<br><span style='font-size:14px; font-weight:normal; color:#ffcdd2;'>Aproxime um pouco mais o celular, foque bem no quadrado do QR Code e tire a foto em um local iluminado.</span>";
-            box.className = "resultado erro";
-        }
+    // Segunda passada: Se a imagem for muito comprida, amplia o centro geométrico
+    if (!code) {
+        const canvasFocado = document.createElement("canvas");
+        const ctxFocado = canvasFocado.getContext("2d");
+        canvasFocado.width = 500;
+        canvasFocado.height = 500;
+        ctxFocado.filter = 'grayscale(1) contrast(4)';
+        ctxFocado.drawImage(imagem, largura * 0.05, altura * 0.1, largura * 0.9, altura * 0.8, 0, 0, 500, 500);
         
-        URL.revokeObjectURL(imagemBlob);
-    };
-    imagem.src = imagemBlob;
+        const imageDataFocada = ctxFocado.getImageData(0, 0, 500, 500);
+        code = jsQR(imageDataFocada.data, 500, 500, { inversionAttempts: "attemptBoth" });
+    }
+
+    if (code && code.data) {
+        statusTxt.innerText = "🚀 Enviando dados para validação fiscal...";
+        enviarDadosParaNuvem(code.data);
+    } else {
+        statusTxt.innerText = "";
+        box.style.display = "block";
+        box.innerHTML = "❌ Não foi possível ler o QR Code.<br><span style='font-size:14px; font-weight:normal; color:#ffcdd2;'>Mantenha o celular estável, posicione o QR Code bem centralizado na câmera e tente tirar a foto um pouco mais de perto (15cm).</span>";
+        box.className = "resultado erro";
+    }
 }
 
 function enviarDadosParaNuvem(linkQRCode) {
