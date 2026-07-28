@@ -12,8 +12,6 @@
         .resultado { margin-top: 25px; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 18px; display: none; line-height: 1.5; }
         .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; }
         .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; }
-        .tutorial { text-align: left; background: #1a1a1a; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-top: 25px; font-size: 14px; color: #ccc; line-height: 1.6; }
-        .tutorial b { color: #00e676; }
     </style>
 </head>
 <body>
@@ -31,13 +29,6 @@
     
     <div id="resultado-box" class="resultado"></div>
     <p id="status" style="color:#00e676; font-size:16px; font-weight: bold; margin-top: 20px;"></p>
-
-    <div class="tutorial">
-        <h3 style="margin-top:0; color:#fff; font-size:15px; border-bottom:1px solid #333; padding-bottom:5px;">📲 Como Jogar Fast-Track:</h3>
-        1. Use a <b>Câmera Padrão</b> ou o leitor de QR do seu celular na nota.<br>
-        2. Em vez de abrir o link, clique em <b>"Copiar link"</b> na tela do celular.<br>
-        3. Volte aqui, cole no campo e clique em Enviar.
-    </div>
 </div>
 
 <script>
@@ -57,28 +48,31 @@ function enviarLinkParaNuvem() {
     }
 
     box.style.display = 'none';
-    statusTxt.innerText = "🚀 Processando chNFe de 44 dígitos na nuvem Supabase...";
+    statusTxt.innerText = "🚀 Conectando à nuvem Terracoin...";
 
-    // Envia o link em texto puro direto para a sua RPC do Supabase
+    // Ajuste fino nos headers de segurança da API REST do Supabase
     fetch(`${SUPABASE_URL}/rest/v1/rpc/validar_e_computar_nota`, {
         method: 'POST',
         headers: { 
             'Content-Type': 'application/json',
             'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Prefer': 'return=representation'
         },
         body: JSON.stringify({ 
-            p_id_jogador: document.getElementById('jogador').value, 
+            p_id_jogador: document.getElementById('jogador').value.trim(), 
             p_link_qrcode: linkInput 
         })
     })
-    .then(res => {
-        if (!res.ok) throw new Error("Erro na resposta do banco.");
-        return res.json();
-    })
-    .then(dados => {
+    .then(async res => {
+        const dados = await res.json();
         statusTxt.innerText = "";
         box.style.display = "block";
+
+        if (!res.ok) {
+            // Se o Supabase rejeitar, mostra o erro exato do servidor do banco de dados
+            throw new Error(dados.message || "Erro interno do servidor Supabase.");
+        }
         
         if (dados.erro) {
             box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${dados.erro}</span>`;
@@ -86,13 +80,13 @@ function enviarLinkParaNuvem() {
         } else {
             box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${dados.mensagem}</span><br><br>💰 Saldo Atual: ${dados.novo_saldo} Terramoedas`;
             box.className = "resultado sucesso";
-            document.getElementById('link-sefaz').value = ""; // Limpa o campo
+            document.getElementById('link-sefaz').value = ""; 
         }
     })
     .catch((erro) => {
         statusTxt.innerText = "";
         box.style.display = "block";
-        box.innerHTML = "❌ Erro de Conexão:<br><span style='font-size:15px; font-weight:normal;'>Verifique o formato da URL ou os parâmetros do banco.</span>";
+        box.innerHTML = `❌ Falha no Sistema:<br><span style='font-size:15px; font-weight:normal;'>${erro.message}</span>`;
         box.className = "resultado erro";
     });
 }
