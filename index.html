@@ -7,18 +7,16 @@
     <style>
         body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
         .container { max-width: 400px; margin: 0 auto; }
-        button { background: #00e676; border: none; padding: 20px; font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer; color: #000; width: 100%; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,230,118,0.3); }
+        .btn-principal { background: #00e676; border: none; padding: 20px; font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer; color: #000; width: 100%; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,230,118,0.3); text-transform: uppercase; display: block; }
         input[type="text"] { padding: 12px; width: 90%; border-radius: 8px; margin-bottom: 15px; font-size: 16px; background: #222; color: #fff; border: 1px solid #444; text-align: center; }
         .resultado { margin-top: 25px; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 18px; display: none; line-height: 1.5; }
         .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; }
         .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; }
-        
-        /* Estilos do Scanner de Vídeo */
-        .camera-box { width: 100%; max-width: 360px; margin: 20px auto 0 auto; border-radius: 16px; overflow: hidden; border: 3px solid #00e676; display: none; position: relative; background: #000; }
-        video { width: 100%; height: auto; display: block; }
-        .mira { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 2px dashed #00e676; box-shadow: 0 0 0 4000px rgba(0,0,0,0.5); pointer-events: none; }
-        #log { margin-top: 15px; font-size: 12px; color: #aaa; text-align: left; background: #1a1a1a; padding: 10px; border-radius: 8px; max-height: 90px; overflow-y: auto; display: block; border: 1px solid #333; }
+        #preview-container { margin-top: 20px; display: none; }
+        #preview-img { max-width: 100%; max-height: 180px; border-radius: 8px; border: 2px solid #444; }
     </style>
+    <!-- Importação de biblioteca ultra estável e leve via CDN global rápido -->
+    <script src="https://cloudflare.com"></script>
 </head>
 <body>
 
@@ -28,145 +26,104 @@
     <label style="display:block; text-align:left; margin-bottom:5px; color:#888; font-size:14px;">Identificação do Jogador:</label>
     <input type="text" id="jogador" value="jogador_Eudes_Teste">
     
-    <button id="btn-scanner" onclick="alternarScanner()">📷 INICIAR SCANNER AO VIVO</button>
+    <button id="btn-iniciar" class="btn-principal" onclick="document.getElementById('input-camera').click()">📷 ESCANEAR NOTA FISCAL</button>
     
-    <!-- Container do Vídeo Nativo da Câmera -->
-    <div id="camera-container" class="camera-box">
-        <video id="video" playsinline></video>
-        <div class="mira"></div>
+    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="processarNotaMultiQuadrante(event)">
+    
+    <div id="preview-container">
+        <p style="color:#aaa; font-size:14px; margin-bottom:5px;">Filtro de Alto Contraste Ativo:</p>
+        <img id="preview-img" src="" alt="Preview">
     </div>
-    
+
     <div id="resultado-box" class="resultado"></div>
     <p id="status" style="color:#00e676; font-size:16px; font-weight: bold; margin-top: 20px;"></p>
-    <div id="log">> Aguardando inicialização do scanner...</div>
 </div>
 
 <script>
 const SUPABASE_URL = "https://supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_0OAqqEGs9Vd1tMr--xwCgw_IGGupw8h"; 
 
-let streamVideo = null;
-let escaneando = false;
-let canvasInvisivel = null;
-let ctxInvisivel = null;
+function processarNotaMultiQuadrante(event) {
+    const arquivo = event.target.files[0];
+    if (!arquivo) return;
 
-function adicionarLog(texto) {
-    const logBox = document.getElementById('log');
-    logBox.innerHTML += `<br>> ${texto}`;
-    logBox.scrollTop = logBox.scrollHeight;
-}
-
-// Controla o ligar/desligar do fluxo de vídeo nativo
-async function alternarScanner() {
-    const btn = document.getElementById('btn-scanner');
-    const container = document.getElementById('camera-container');
     const box = document.getElementById('resultado-box');
-    
-    if (escaneando) {
-        pararCamera();
-        return;
-    }
+    const statusTxt = document.getElementById('status');
+    const previewContainer = document.getElementById('preview-container');
+    const previewImg = document.getElementById('preview-img');
 
     box.style.display = 'none';
-    document.getElementById('log').innerHTML = "";
-    adicionarLog("Solicitando acesso nativo à câmera traseira...");
+    statusTxt.innerText = "⏳ Tratando e aplicando filtros de nitidez...";
+
+    const imagemBlob = URL.createObjectURL(arquivo);
+    const imagem = new Image();
     
-    try {
-        // Força a inicialização da câmera traseira em alta definição
-        streamVideo = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: "environment" } }
-        }).catch(() => {
-            // Fallback caso falte o parâmetro exato em computadores/testes
-            return navigator.mediaDevices.getUserMedia({ video: true });
-        });
-
-        const video = document.getElementById('video');
-        video.srcObject = streamVideo;
-        video.setAttribute("playsinline", true); // Exigido pelo Safari/iOS
-        video.play();
-
-        container.style.display = 'block';
-        btn.innerText = "🛑 PARAR SCANNER";
-        btn.style.background = "#ff1744";
-        escaneando = true;
+    imagem.onload = function() {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
         
-        adicionarLog("Câmera ligada. Carregando recursos do scanner...");
-        carregarBibliotecaEIniciarLoop();
-
-    } catch (erroCamera) {
-        adicionarLog(`Erro ao abrir câmera: ${erroCamera.message}`);
-        alert("Permissão de câmera negada ou dispositivo indisponível.");
-    }
-}
-
-function pararCamera() {
-    const btn = document.getElementById('btn-scanner');
-    const container = document.getElementById('camera-container');
-    
-    if (streamVideo) {
-        streamVideo.getTracks().forEach(track => track.stop());
-    }
-    
-    escaneando = false;
-    container.style.display = 'none';
-    btn.innerText = "📷 INICIAR SCANNER AO VIVO";
-    btn.style.background = "#00e676";
-    adicionarLog("Scanner desligado.");
-}
-
-function carregarBibliotecaEIniciarLoop() {
-    const script = document.createElement('script');
-    script.src = "https://jsdelivr.net";
-    
-    script.onload = function() {
-        adicionarLog("Decodificador pronto. Escaneando frames ao vivo...");
-        canvasInvisivel = document.createElement("canvas");
-        ctxInvisivel = canvasInvisivel.getContext("2d");
+        // Redimensiona mantendo a proporção para leitura rápida
+        const maxDimensao = 800;
+        let largura = imagem.width;
+        let altura = imagem.height;
+        if (largura > maxDimensao) {
+            altura = (imagem.height / imagem.width) * maxDimensao;
+            largura = maxDimensao;
+        }
         
-        // Dispara o loop de leitura contínua
-        requestAnimationFrame(processarFrame);
-    };
-    document.head.appendChild(script);
-}
-
-function processarFrame() {
-    if (!escaneando) return;
-
-    const video = document.getElementById('video');
-
-    // Aguarda o vídeo estar pronto para ler as dimensões reais
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        // Reduzimos o frame do vídeo em tempo real para 450px para o celular ler instantaneamente sem travar
-        const largura = 450;
-        const altura = (video.videoHeight / video.videoWidth) * largura;
+        canvas.width = largura;
+        canvas.height = altura;
         
-        canvasInvisivel.width = largura;
-        canvasInvisivel.height = altura;
+        // Aplica filtro de alto contraste estilo Otsu via GPU (Remove sombras do papel amassado)
+        ctx.filter = 'grayscale(1) contrast(3.5)';
+        ctx.drawImage(imagem, 0, 0, largura, altura);
         
-        ctxInvisivel.drawImage(video, 0, 0, largura, altura);
-        const imageData = ctxInvisivel.getImageData(0, 0, largura, altura);
+        // Atualiza o preview na tela instantaneamente
+        previewImg.src = canvas.toDataURL("image/jpeg", 0.8);
+        previewContainer.style.display = "block";
         
-        // Tenta ler o frame atual
-        const code = jsQR(imageData.data, largura, altura, { inversionAttempts: "dontInvert" });
+        statusTxt.innerText = "⏳ Analisando mapeamento de pixels...";
+
+        // Captura os dados processados em preto e branco puro
+        const imageData = ctx.getImageData(0, 0, largura, altura);
+        
+        // Passada 1: Tenta ler a imagem inteira tratada
+        let code = jsQR(imageData.data, largura, altura, { inversionAttempts: "attemptBoth" });
+
+        // Passada 2: Se falhar, foca dinamicamente apenas na região do QR Code isolando ruídos
+        if (!code) {
+            // Cria um canvas menor focado para ampliar detalhes dos pontos do QR Code
+            const canvasFocado = document.createElement("canvas");
+            const ctxFocado = canvasFocado.getContext("2d");
+            canvasFocado.width = 500;
+            canvasFocado.height = 500;
+            
+            // Recorta a área central/inferior mais provável de conter o código
+            ctxFocado.filter = 'grayscale(1) contrast(4)';
+            ctxFocado.drawImage(imagem, largura*0.05, altura*0.1, largura*0.9, altura*0.8, 0, 0, 500, 500);
+            
+            const imageDataFocada = ctxFocado.getImageData(0, 0, 500, 500);
+            code = jsQR(imageDataFocada.data, 500, 500, { inversionAttempts: "attemptBoth" });
+        }
 
         if (code && code.data) {
-            adicionarLog("MIRA ALINHADA! QR Code detectado!");
-            pararCamera(); // Desliga o vídeo imediatamente ao ler
-            
-            document.getElementById('status').innerText = "🚀 Enviando dados para validação fiscal...";
+            statusTxt.innerText = "🚀 Enviando dados para validação fiscal...";
             enviarDadosParaNuvem(code.data);
-            return; // Interrompe o loop
+        } else {
+            statusTxt.innerText = "";
+            box.style.display = "block";
+            box.innerHTML = "❌ Não foi possível ler o QR Code.<br><span style='font-size:14px; font-weight:normal; color:#ffcdd2;'>Aproxime um pouco mais o celular, foque bem no quadrado do QR Code e tire a foto em um local iluminado.</span>";
+            box.className = "resultado erro";
         }
-    }
-
-    // Continua executando a análise no próximo frame do vídeo
-    requestAnimationFrame(processarFrame);
+        
+        URL.revokeObjectURL(imagemBlob);
+    };
+    imagem.src = imagemBlob;
 }
 
 function enviarDadosParaNuvem(linkQRCode) {
     const box = document.getElementById('resultado-box');
     const statusTxt = document.getElementById('status');
-    adicionarLog("Conectando de forma segura ao Supabase...");
 
     fetch(`${SUPABASE_URL}/rest/v1/rpc/validar_e_computar_nota`, {
         method: 'POST',
@@ -181,7 +138,7 @@ function enviarDadosParaNuvem(linkQRCode) {
         })
     })
     .then(res => {
-        if (!res.ok) throw new Error(`Erro de resposta do banco (Status: ${res.status}).`);
+        if (!res.ok) throw new Error("Erro de comunicação com o servidor.");
         return res.json();
     })
     .then(dados => {
@@ -189,23 +146,18 @@ function enviarDadosParaNuvem(linkQRCode) {
         box.style.display = "block";
         
         if (dados.erro) {
-            adicionarLog(`Operação recusada: ${dados.erro}`);
             box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${dados.erro}</span>`;
             box.className = "resultado erro";
         } else {
-            adicionarLog("Moedas creditadas no banco de dados!");
             box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${dados.mensagem}</span><br><br>💰 Saldo Atual: ${dados.novo_saldo} Terramoedas`;
             box.className = "resultado sucesso";
         }
     })
     .catch((erro) => {
-        adicionarLog(`Falha na nuvem: ${erro.message}`);
         statusTxt.innerText = "";
         box.style.display = "block";
-        box.innerHTML = `❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>${erro.message}</span>`;
+        box.innerHTML = "❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>Falha na conexão com o sistema Terracoin.</span>";
         box.className = "resultado erro";
     });
 }
 </script>
-</body>
-</html>
