@@ -12,8 +12,6 @@
         .resultado { margin-top: 25px; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 18px; display: none; line-height: 1.5; }
         .sucesso { background: #1b5e20; color: #a5d6a7; border: 2px solid #81c784; }
         .erro { background: #b71c1c; color: #ef9a9a; border: 2px solid #e57373; }
-        #preview-container { margin-top: 20px; display: none; }
-        #preview-img { max-width: 100%; max-height: 180px; border-radius: 8px; border: 2px solid #444; }
     </style>
 </head>
 <body>
@@ -24,17 +22,10 @@
     <label style="display:block; text-align:left; margin-bottom:5px; color:#888; font-size:14px;">Identificação do Jogador:</label>
     <input type="text" id="jogador" value="jogador_Eudes_Teste">
     
-    <!-- Mantemos o mesmo botão do seu site original -->
     <button id="btn-iniciar" class="btn-principal" onclick="document.getElementById('input-camera').click()">📷 ESCANEAR NOTA FISCAL</button>
     
-    <!-- Captura a imagem usando a inteligência de hardware do aparelho -->
-    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="processarComTecnologiaNativa(event)">
+    <input type="file" id="input-camera" accept="image/*" capture="environment" style="display: none;" onchange="enviarFotoParaBanco(event)">
     
-    <div id="preview-container">
-        <p style="color:#aaa; font-size:14px; margin-bottom:5px;">Preview do Cupom Capturado:</p>
-        <img id="preview-img" src="" alt="Preview">
-    </div>
-
     <div id="resultado-box" class="resultado"></div>
     <p id="status" style="color:#00e676; font-size:16px; font-weight: bold; margin-top: 20px;"></p>
 </div>
@@ -43,91 +34,57 @@
 const SUPABASE_URL = "https://supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_0OAqqEGs9Vd1tMr--xwCgw_IGGupw8h"; 
 
-async function processarComTecnologiaNativa(event) {
+function enviarFotoParaBanco(event) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
 
     const box = document.getElementById('resultado-box');
     const statusTxt = document.getElementById('status');
-    const previewContainer = document.getElementById('preview-container');
-    const previewImg = document.getElementById('preview-img');
 
     box.style.display = 'none';
-    statusTxt.innerText = "⏳ Acionando Inteligência de Hardware do Celular...";
+    statusTxt.innerText = "⏳ Enviando imagem para processamento na nuvem...";
 
-    // Renderiza o preview da imagem na tela na mesma hora
-    const imagemUrl = URL.createObjectURL(arquivo);
-    previewImg.src = imagemUrl;
-    previewContainer.style.display = "block";
-
-    const imagemObj = new Image();
-    imagemObj.onload = async function() {
-        try {
-            // USANDO PENSAMENTO FORA DA CAIXA: Chama o detector de IA nativo do próprio sistema do celular
-            if ('BarcodeDetector' in window) {
-                const detectorNativo = new BarcodeDetector({ formats: ['qr_code'] });
-                const codigosDetectados = await detectorNativo.detect(imagemObj);
-                
-                if (codigosDetectados.length > 0) {
-                    statusTxt.innerText = "🚀 QR Code detectado por hardware! Validando...";
-                    enviarLinkParaSupabase(codigosDetectados[0].rawValue);
-                    return;
-                }
-            }
-            
-            // Plano B: Se o hardware falhar, enviamos o próprio link gerado pelo input de arquivos caso o leitor nativo do sistema operacional tenha interceptado o texto
-            throw new Error("Necessário processamento secundário");
-
-        } catch (err) {
-            // Se o motor local falhar na foto inteira devido à distância, tentamos usar o leitor do browser
-            statusTxt.innerText = "⏳ Decodificando via barramento alternativo...";
-            
-            // Criamos uma leitura alternativa direta enviando o arquivo para a nossa lógica inteligente de texto
-            // Se o link for visível no arquivo, a nossa Regex do banco salva o dia
-            enviarLinkParaSupabase(imagemUrl);
-        }
-    };
-    imagemObj.src = imagemUrl;
-}
-
-function enviarLinkParaSupabase(linkObtido) {
-    const box = document.getElementById('resultado-box');
-    const statusTxt = document.getElementById('status');
-
-    // Chame a nossa RPC inteligente criada na nuvem
-    fetch(`${SUPABASE_URL}/rest/v1/rpc/validar_e_computar_nota`, {
-        method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({ 
-            p_id_jogador: document.getElementById('jogador').value, 
-            p_link_qrcode: linkObtido 
-        })
-    })
-    .then(res => {
-        if (!res.ok) throw new Error("Erro na comunicação com o banco.");
-        return res.json();
-    })
-    .then(dados => {
-        statusTxt.innerText = "";
-        box.style.display = "block";
+    const leitor = new FileReader();
+    leitor.onload = function(e) {
+        // Isola os dados brutos da imagem em Base64 removendo o cabeçalho descritivo
+        const fotoBase64 = e.target.result.split(',')[1];
         
-        if (dados.erro) {
-            box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${dados.erro}</span>`;
+        // Dispara o payload diretamente para a nossa RPC do Postgres
+        fetch(`${SUPABASE_URL}/rest/v1/rpc/processar_foto_na_nuvem`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({ 
+                p_id_jogador: document.getElementById('jogador').value, 
+                p_imagem_base64: fotoBase64 
+            })
+        })
+        .then(res => {
+            if (!res.ok) throw new Error("A nuvem falhou em decodificar o arquivo.");
+            return res.json();
+        })
+        .then(dados => {
+            statusTxt.innerText = "";
+            box.style.display = "block";
+            
+            if (dados.erro) {
+                box.innerHTML = `❌ Erro de Validação:<br><span style='font-size:15px; font-weight:normal;'>${dados.erro}</span>`;
+                box.className = "resultado erro";
+            } else {
+                box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${dados.mensagem}</span><br><br>💰 Saldo Atual: ${dados.novo_saldo} Terramoedas`;
+                box.className = "resultado sucesso";
+            }
+        })
+        .catch((erro) => {
+            statusTxt.innerText = "";
+            box.style.display = "block";
+            box.innerHTML = `❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>${erro.message}</span>`;
             box.className = "resultado erro";
-        } else {
-            box.innerHTML = `🎉 Sucesso!<br><span style='font-size:15px; font-weight:normal;'>${dados.mensagem}</span><br><br>💰 Saldo Atual: ${dados.novo_saldo} Terramoedas`;
-            box.className = "resultado sucesso";
-        }
-    })
-    .catch((erro) => {
-        statusTxt.innerText = "";
-        box.style.display = "block";
-        box.innerHTML = "❌ Erro Crítico:<br><span style='font-size:15px; font-weight:normal;'>Falha na comunicação ou nota fiscal incompreensível.</span>";
-        box.className = "resultado erro";
-    });
+        });
+    };
+    leitor.readAsDataURL(arquivo);
 }
 </script>
